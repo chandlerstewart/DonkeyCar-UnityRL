@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using System.Collections;
 using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
@@ -10,7 +10,7 @@ public class Car : Agent, ICar {
 	public WheelCollider[] wheelColliders;
 	public Transform[] wheelMeshes;
 
-	public float maxTorque = 50.0f;
+	public float maxTorque = 450.0f;
 	public float maxSpeed = 10.0f;
 
 	public Transform centrOfMass;
@@ -41,6 +41,8 @@ public class Car : Agent, ICar {
 
 	//name of the last object we hit.
 	public string last_collision = "none";
+
+	private int lowVelCount = 0;
 
 
 	// Use this for initialization
@@ -93,7 +95,7 @@ public class Car : Agent, ICar {
         maxSteer = val;
 
         PlayerPrefs.SetFloat("max_steer", maxSteer);
-        PlayerPrefs.Save();
+		PlayerPrefs.Save();
     }
 
     public float GetMaxSteering()
@@ -118,9 +120,16 @@ public class Car : Agent, ICar {
 
 	void CheckReward()
     {
-		if (rb.velocity.magnitude >= maxSpeed / 3 && IsGrounded())
+		if (IsGrounded() && rb.velocity.magnitude >= maxSpeed * 0.75)
         {
-			AddReward(0.01f);
+			AddReward(0.01f * rb.velocity.magnitude);
+		} else if (IsGrounded()){
+			AddReward(0.01f * rb.velocity.magnitude * 0.25f);
+		}
+
+		if (rb.velocity.magnitude < 1)
+        {
+			lowVelCount++;
         }
     }
 
@@ -216,8 +225,10 @@ public class Car : Agent, ICar {
 		RequestHandBrake(1.0f);
 		RequestFootBrake(1.0f);
 		RequestSteering(0.0f);
+		
 		acceleration = Vector3.zero;
 		prevVel = Vector3.zero;
+		lowVelCount = 0;
 
 		rb.angularVelocity.Set(0, 0, 0);
 		rb.velocity.Set(0, 0, 0);
@@ -230,9 +241,10 @@ public class Car : Agent, ICar {
 	void FixedUpdate()
 	{
 
-		if (!IsGrounded())
+		if (!IsGrounded() || lowVelCount >= 6)
         {
-			AddReward(-.1f);
+			lowVelCount = 0;
+			AddReward(-1f);
 
             EndEpisode();
 		}
@@ -277,10 +289,16 @@ public class Car : Agent, ICar {
 
     public override void CollectObservations(VectorSensor sensor)
     {
-		sensor.AddObservation(requestSteering);
+		//normalize steering between -1 and 1
+		float normalizedSteering = requestSteering / maxSteer;
+	
+		sensor.AddObservation(normalizedSteering);
 
+		//torque already normalized
 		sensor.AddObservation(requestTorque);
-    }
+	}
+
+
 
     public override void OnActionReceived(float[] vectorAction)
 	{
